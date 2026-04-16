@@ -5,6 +5,14 @@ services:
       - '8080:80'
     depends_on:
       - api
+    develop:
+      watch:
+        - path: ./ui/src
+          action: rebuild
+        - path: ./ui/index.html
+          action: rebuild
+        - path: ./ui/nginx.conf
+          action: rebuild
 
   api:
     build: ./api
@@ -16,6 +24,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    develop:
+      watch:
+        - path: ./api/src
+          action: rebuild
+        - path: ./api/package.json
+          action: rebuild
 
   db:
     image: postgres:17-alpine
