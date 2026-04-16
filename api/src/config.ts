@@ -10,4 +10,5 @@ function required(name: string): string {
 export const config = {
   port: Number(process.env.PORT ?? 3000),
   databaseUrl: required('DATABASE_URL'),
+  jwtSecret: required('JWT_SECRET'),
 };
