@@ -19,6 +19,7 @@ services:
     environment:
       PORT: ${API_PORT:-3000}
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-filestorage}
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-me}
     ports:
       - '3000:3000'
     depends_on:
