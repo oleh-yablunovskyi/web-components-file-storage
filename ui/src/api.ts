@@ -18,7 +18,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
-  if (res.status === 401) {
+  if (res.status === 401 && token) {
     localStorage.removeItem('jwt');
     location.reload();
     throw new Error('Session expired');
@@ -40,4 +40,13 @@ interface RegisterResponse {
 
 export async function register(name: string, email: string, password: string): Promise<RegisterResponse> {
   return request<RegisterResponse>('POST', '/api/register', { name, email, password });
+}
+
+interface LoginResponse {
+  user: { id: string; name: string; email: string; created_at: string };
+  token: string;
+}
+
+export async function login(email: string, password: string): Promise<LoginResponse> {
+  return request<LoginResponse>('POST', '/api/login', { email, password });
 }

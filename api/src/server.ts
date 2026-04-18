@@ -25,6 +25,11 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === 'POST' && req.url === '/api/login') {
+      await authController.login(req, res);
+      return;
+    }
+
     res.writeHead(404);
     res.end();
   } catch (err: unknown) {

@@ -9,7 +9,7 @@ export class AuthService {
   constructor(private repo: AuthRepository) {}
 
   private signToken(user: User): string {
-    return jwt.sign({ sub: user.id, email: user.email }, config.jwtSecret);
+    return jwt.sign({ sub: user.id, email: user.email, name: user.name }, config.jwtSecret);
   }
 
   async register(name: string, email: string, password: string): Promise<{ user: User; token: string }> {

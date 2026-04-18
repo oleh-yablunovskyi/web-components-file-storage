@@ -14,4 +14,13 @@ export class AuthController {
     const result = await this.service.register(name, email, password);
     sendJson(res, 201, result);
   }
+
+  async login(req: http.IncomingMessage, res: http.ServerResponse) {
+    const { email, password } = await readJson(req);
+    if (!email || !password) {
+      throw new ApiError(400, 'MISSING_FIELDS', 'email and password are required');
+    }
+    const result = await this.service.login(email, password);
+    sendJson(res, 200, result);
+  }
 }

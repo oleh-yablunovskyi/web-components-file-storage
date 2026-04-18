@@ -42,16 +42,16 @@ template.innerHTML = `
       <button id="logout">Logout</button>
     </div>
   </div>
-  <p>Home page</p>
+  <p>Welcome, <span id="name"></span>!</p>
 `;
 
-function getEmailFromJwt(): string | null {
+function getPayloadFromJwt(): { email: string; name: string } | null {
   const token = localStorage.getItem('jwt');
   if (!token) return null;
   try {
     const payload = token.split('.')[1];
     const decoded = JSON.parse(atob(payload));
-    return decoded.email ?? null;
+    return { email: decoded.email, name: decoded.name };
   } catch {
     return null;
   }
@@ -68,7 +68,10 @@ class HomePage extends HTMLElement {
 
   connectedCallback() {
     const emailEl = this.shadow.getElementById('email')!;
-    emailEl.textContent = getEmailFromJwt() ?? '';
+    const nameEl = this.shadow.getElementById('name')!;
+    const payload = getPayloadFromJwt();
+    emailEl.textContent = payload?.email ?? '';
+    nameEl.textContent = payload?.name ?? '';
 
     this.shadow.getElementById('logout')!.addEventListener('click', () => {
       localStorage.removeItem('jwt');
