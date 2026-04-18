@@ -75,7 +75,6 @@ class HomePage extends HTMLElement {
 
     this.shadow.getElementById('logout')!.addEventListener('click', () => {
       localStorage.removeItem('jwt');
-      location.hash = '';
       location.reload();
     });
   }
