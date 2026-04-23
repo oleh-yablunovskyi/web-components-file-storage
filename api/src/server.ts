@@ -1,15 +1,42 @@
 import http from 'node:http';
 import { config } from './config.js';
 import { pool } from './db.js';
+import { sendError } from './utils.js';
+import { AuthRepository } from './auth/auth.repository.js';
+import { AuthService } from './auth/auth.service.js';
+import { AuthController } from './auth/auth.controller.js';
+import { HealthController } from './health/health.controller.js';
 
-const server = http.createServer((req, res) => {
-  if (req.method === 'GET' && req.url === '/health') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end('{"status":"ok"}');
-    return;
+const authRepo = new AuthRepository(pool);
+const authService = new AuthService(authRepo);
+const authController = new AuthController(authService);
+const healthController = new HealthController();
+
+const server = http.createServer(async (req, res) => {
+  const start = Date.now();
+  try {
+    if (req.method === 'GET' && req.url === '/api/health') {
+      healthController.health(req, res);
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/api/register') {
+      await authController.register(req, res);
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/api/login') {
+      await authController.login(req, res);
+      return;
+    }
+
+    res.writeHead(404);
+    res.end();
+  } catch (err: unknown) {
+    sendError(res, err);
+  } finally {
+    console.log(`${req.method} ${req.url} ${res.statusCode} ${Date.now() - start}ms`);
   }
-  res.writeHead(404);
-  res.end();
 });
 
 try {
