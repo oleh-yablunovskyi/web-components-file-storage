@@ -4,7 +4,13 @@ services:
     ports:
       - '8080:80'
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO /dev/null http://127.0.0.1/api/health || exit 1']
+      interval: 2s
+      timeout: 3s
+      retries: 10
     develop:
       watch:
         - path: ./ui/src
@@ -25,6 +31,11 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO /dev/null http://127.0.0.1:3000/api/health || exit 1']
+      interval: 2s
+      timeout: 3s
+      retries: 10
     develop:
       watch:
         - path: ./api/src
