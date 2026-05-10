@@ -5,6 +5,10 @@ import { ApiError } from '../errors.js';
 import type { AuthRepository } from './auth.repository.js';
 import type { User } from './auth.repository.js';
 
+const BCRYPT_SALT_ROUNDS = 10;
+const PASSWORD_MIN_LENGTH = 8;
+const PASSWORD_MAX_LENGTH = 100;
+
 export class AuthService {
   constructor(private repo: AuthRepository) {}
 
@@ -13,7 +17,7 @@ export class AuthService {
   }
 
   async register(name: string, email: string, password: string): Promise<{ user: User; token: string }> {
-    if (password.length < 8 || password.length > 100) {
+    if (password.length < PASSWORD_MIN_LENGTH || password.length > PASSWORD_MAX_LENGTH) {
       throw new ApiError(400, 'INVALID_PASSWORD', 'Password must be 8\u2013100 characters');
     }
 
@@ -22,7 +26,7 @@ export class AuthService {
       throw new ApiError(409, 'EMAIL_TAKEN', 'Email is already registered');
     }
 
-    const hash = await bcrypt.hash(password, 10);
+    const hash = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
     const user = await this.repo.insert(name, email, hash);
     return { user, token: this.signToken(user) };
   }
