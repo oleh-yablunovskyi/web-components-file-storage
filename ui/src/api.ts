@@ -34,7 +34,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 interface RegisterResponse {
-  user: { id: string; name: string; email: string; created_at: string };
+  user: { id: string; name: string; email: string; createdAt: string };
   token: string;
 }
 
@@ -43,7 +43,7 @@ export async function register(name: string, email: string, password: string): P
 }
 
 interface LoginResponse {
-  user: { id: string; name: string; email: string; created_at: string };
+  user: { id: string; name: string; email: string; createdAt: string };
   token: string;
 }
 

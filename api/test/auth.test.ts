@@ -6,35 +6,48 @@ import type http from 'node:http';
 import { AuthController } from '../src/auth/auth.controller.js';
 import { AuthService } from '../src/auth/auth.service.js';
 import type { AuthServiceError, AuthSession } from '../src/auth/auth.service.js';
-import type { UserRow, User } from '../src/auth/auth.repository.js';
+import type { User } from '../src/auth/user.interface.js';
 import type { Result } from '../src/types/result.js';
 
 // ---------------------------------------------------------------------------
 // In-memory fake repo
 // ---------------------------------------------------------------------------
 
-class FakeAuthRepository {
-  private rows = new Map<string, UserRow>();
+interface FakeUserRow {
+  id: string;
+  name: string;
+  email: string;
+  passwordHash: string;
+  createdAt: string;
+}
 
-  async findByEmail(email: string): Promise<UserRow | null> {
+class FakeAuthRepository {
+  private rows = new Map<string, FakeUserRow>();
+
+  async findByEmail(email: string): Promise<{ user: User; passwordHash: string } | null> {
     for (const row of this.rows.values()) {
-      if (row.email === email) return row;
+      if (row.email === email) {
+        return {
+          user: { id: row.id, name: row.name, email: row.email, createdAt: row.createdAt },
+          passwordHash: row.passwordHash,
+        };
+      }
     }
     return null;
   }
 
   async insert(name: string, email: string, passwordHash: string): Promise<User> {
     const id = crypto.randomUUID();
-    const created_at = new Date().toISOString();
-    const row: UserRow = { id, name, email, password_hash: passwordHash, created_at };
+    const createdAt = new Date().toISOString();
+    const row: FakeUserRow = { id, name, email, passwordHash, createdAt };
     this.rows.set(id, row);
-    return { id, name, email, created_at };
+    return { id, name, email, createdAt };
   }
 
   async findById(id: string): Promise<User | null> {
     const row = this.rows.get(id);
     if (!row) return null;
-    return { id: row.id, name: row.name, email: row.email, created_at: row.created_at };
+    return { id: row.id, name: row.name, email: row.email, createdAt: row.createdAt };
   }
 }
 
@@ -120,7 +133,7 @@ describe('AuthService', () => {
       assert.equal(result.user.name, 'Alice');
       assert.equal(result.user.email, 'alice@test.com');
       assert.ok(result.user.id, 'user should have an id');
-      assert.ok(result.user.created_at, 'user should have created_at');
+      assert.ok(result.user.createdAt, 'user should have createdAt');
       assert.ok(result.token, 'should return a token');
       assert.equal((result.user as any).password_hash, undefined, 'user must not expose password_hash');
     });
@@ -130,8 +143,8 @@ describe('AuthService', () => {
 
       const stored = await repo.findByEmail('alice@test.com');
       assert.ok(stored, 'row should be stored');
-      assert.match(stored!.password_hash, /^\$2[ab]\$/, 'hash should be bcrypt');
-      assert.notEqual(stored!.password_hash, 'password123', 'must not store plaintext');
+      assert.match(stored!.passwordHash, /^\$2[ab]\$/, 'hash should be bcrypt');
+      assert.notEqual(stored!.passwordHash, 'password123', 'must not store plaintext');
     });
 
     it('returns EMAIL_TAKEN on duplicate email', async () => {

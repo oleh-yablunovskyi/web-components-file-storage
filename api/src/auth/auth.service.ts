@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
 import type { Result } from '../types/result.js';
 import type { AuthRepository } from './auth.repository.js';
-import type { User } from './auth.repository.js';
+import type { User } from './user.interface.js';
 
 const BCRYPT_SALT_ROUNDS = 10;
 const PASSWORD_MIN_LENGTH = 8;
@@ -45,15 +45,15 @@ export class AuthService {
   }
 
   async login(email: string, password: string): Promise<Result<AuthSession, AuthServiceError>> {
-    const row = await this.repo.findByEmail(email);
-    if (!row) {
+    const result = await this.repo.findByEmail(email);
+    if (!result) {
       return {
         ok: false,
         error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email or password' },
       };
     }
 
-    const match = await bcrypt.compare(password, row.password_hash);
+    const match = await bcrypt.compare(password, result.passwordHash);
     if (!match) {
       return {
         ok: false,
@@ -61,13 +61,7 @@ export class AuthService {
       };
     }
 
-    const user: User = {
-      id: row.id,
-      name: row.name,
-      email: row.email,
-      created_at: row.created_at,
-    };
-    return { ok: true, value: { user, token: this.signToken(user) } };
+    return { ok: true, value: { user: result.user, token: this.signToken(result.user) } };
   }
 
   async verifyToken(token: string): Promise<User | null> {
