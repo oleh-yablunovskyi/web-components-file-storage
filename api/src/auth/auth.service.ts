@@ -1,13 +1,20 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
-import { ApiError } from '../errors.js';
+import type { Result } from '../types/result.js';
 import type { AuthRepository } from './auth.repository.js';
 import type { User } from './auth.repository.js';
 
 const BCRYPT_SALT_ROUNDS = 10;
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_MAX_LENGTH = 100;
+
+export type AuthSession = { user: User; token: string };
+
+export type AuthServiceError = {
+  code: 'INVALID_PASSWORD' | 'EMAIL_TAKEN' | 'INVALID_CREDENTIALS';
+  message: string;
+};
 
 export class AuthService {
   constructor(private repo: AuthRepository) {}
@@ -16,30 +23,42 @@ export class AuthService {
     return jwt.sign({ sub: user.id, email: user.email, name: user.name }, config.jwtSecret);
   }
 
-  async register(name: string, email: string, password: string): Promise<{ user: User; token: string }> {
+  async register(name: string, email: string, password: string): Promise<Result<AuthSession, AuthServiceError>> {
     if (password.length < PASSWORD_MIN_LENGTH || password.length > PASSWORD_MAX_LENGTH) {
-      throw new ApiError(400, 'INVALID_PASSWORD', 'Password must be 8\u2013100 characters');
+      return {
+        ok: false,
+        error: { code: 'INVALID_PASSWORD', message: 'Password must be 8\u2013100 characters' },
+      };
     }
 
     const existing = await this.repo.findByEmail(email);
     if (existing) {
-      throw new ApiError(409, 'EMAIL_TAKEN', 'Email is already registered');
+      return {
+        ok: false,
+        error: { code: 'EMAIL_TAKEN', message: 'Email is already registered' },
+      };
     }
 
     const hash = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
     const user = await this.repo.insert(name, email, hash);
-    return { user, token: this.signToken(user) };
+    return { ok: true, value: { user, token: this.signToken(user) } };
   }
 
-  async login(email: string, password: string): Promise<{ user: User; token: string }> {
+  async login(email: string, password: string): Promise<Result<AuthSession, AuthServiceError>> {
     const row = await this.repo.findByEmail(email);
     if (!row) {
-      throw new ApiError(401, 'INVALID_CREDENTIALS', 'Invalid email or password');
+      return {
+        ok: false,
+        error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email or password' },
+      };
     }
 
     const match = await bcrypt.compare(password, row.password_hash);
     if (!match) {
-      throw new ApiError(401, 'INVALID_CREDENTIALS', 'Invalid email or password');
+      return {
+        ok: false,
+        error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email or password' },
+      };
     }
 
     const user: User = {
@@ -48,7 +67,7 @@ export class AuthService {
       email: row.email,
       created_at: row.created_at,
     };
-    return { user, token: this.signToken(user) };
+    return { ok: true, value: { user, token: this.signToken(user) } };
   }
 
   async verifyToken(token: string): Promise<User | null> {
