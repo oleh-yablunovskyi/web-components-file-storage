@@ -1,4 +1,4 @@
-import { login } from '../api.js';
+import { login } from '../auth-api.js';
 import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from '../consts.js';
 
 const template = document.createElement('template');
