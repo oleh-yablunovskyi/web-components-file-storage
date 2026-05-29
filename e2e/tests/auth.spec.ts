@@ -17,6 +17,13 @@ async function logout(page: Page) {
   await expect(page).toHaveURL(/#\/login$/);
 }
 
+async function setJwt(page: Page) {
+  await page.addInitScript(() => {
+    const payload = btoa(JSON.stringify({ email: 'test@example.com', name: 'Test User' }));
+    localStorage.setItem('jwt', `header.${payload}.signature`);
+  });
+}
+
 test('register lands on home with email visible', async ({ page }) => {
   const email = uniqueEmail();
   await register(page, email);
@@ -66,6 +73,26 @@ test('unauthenticated navigation to #/home redirects to #/login', async ({ page 
   await page.goto('/#/home');
   await expect(page).toHaveURL(/#\/login$/);
   await expect(page.getByRole('button', { name: 'Log in' })).toBeVisible();
+});
+
+test('authenticated navigation to #/login redirects to #/home', async ({ page }) => {
+  await setJwt(page);
+  await page.goto('/#/login');
+  await expect(page).toHaveURL(/#\/home$/);
+  await expect(page.getByRole('heading', { name: 'File Storage' })).toBeVisible();
+});
+
+test('unknown hash redirects to #/login when unauthenticated', async ({ page }) => {
+  await page.goto('/#/unknown');
+  await expect(page).toHaveURL(/#\/login$/);
+  await expect(page.getByRole('button', { name: 'Log in' })).toBeVisible();
+});
+
+test('unknown hash redirects to #/home when authenticated', async ({ page }) => {
+  await setJwt(page);
+  await page.goto('/#/unknown');
+  await expect(page).toHaveURL(/#\/home$/);
+  await expect(page.getByRole('heading', { name: 'File Storage' })).toBeVisible();
 });
 
 test('duplicate-email registration surfaces error in the form', async ({ page }) => {

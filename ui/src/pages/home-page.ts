@@ -80,4 +80,6 @@ class HomePage extends HTMLElement {
   }
 }
 
-customElements.define('home-page', HomePage);
+export function registerHomePage() {
+  customElements.define('home-page', HomePage);
+}
