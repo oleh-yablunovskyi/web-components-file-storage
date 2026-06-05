@@ -90,4 +90,6 @@ class LoginPage extends HTMLElement {
   }
 }
 
-customElements.define("login-page", LoginPage);
+export function registerLoginPage() {
+  customElements.define("login-page", LoginPage);
+}

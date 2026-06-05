@@ -1,45 +1,111 @@
 import { describe, it, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import { Readable } from 'node:stream';
+import type http from 'node:http';
+import { AuthController } from '../src/auth/auth.controller.js';
 import { AuthService } from '../src/auth/auth.service.js';
-import type { UserRow, User } from '../src/auth/auth.repository.js';
-import { ApiError } from '../src/errors.js';
+import type { AuthServiceError, AuthSession } from '../src/auth/auth.service.js';
+import type { User } from '../src/auth/user.interface.js';
+import type { Result } from '../src/types/result.js';
 
 // ---------------------------------------------------------------------------
 // In-memory fake repo
 // ---------------------------------------------------------------------------
 
-class FakeAuthRepository {
-  private rows = new Map<string, UserRow>();
+interface FakeUserRow {
+  id: string;
+  name: string;
+  email: string;
+  passwordHash: string;
+  createdAt: string;
+}
 
-  async findByEmail(email: string): Promise<UserRow | null> {
+class FakeAuthRepository {
+  private rows = new Map<string, FakeUserRow>();
+
+  async findByEmail(email: string): Promise<{ user: User; passwordHash: string } | null> {
     for (const row of this.rows.values()) {
-      if (row.email === email) return row;
+      if (row.email === email) {
+        return {
+          user: { id: row.id, name: row.name, email: row.email, createdAt: row.createdAt },
+          passwordHash: row.passwordHash,
+        };
+      }
     }
     return null;
   }
 
   async insert(name: string, email: string, passwordHash: string): Promise<User> {
     const id = crypto.randomUUID();
-    const created_at = new Date().toISOString();
-    const row: UserRow = { id, name, email, password_hash: passwordHash, created_at };
+    const createdAt = new Date().toISOString();
+    const row: FakeUserRow = { id, name, email, passwordHash, createdAt };
     this.rows.set(id, row);
-    return { id, name, email, created_at };
+    return { id, name, email, createdAt };
   }
 
   async findById(id: string): Promise<User | null> {
     const row = this.rows.get(id);
     if (!row) return null;
-    return { id: row.id, name: row.name, email: row.email, created_at: row.created_at };
+    return { id: row.id, name: row.name, email: row.email, createdAt: row.createdAt };
   }
 }
 
-const expectApiError = (code: string, status: number) => (err: any) => {
-  assert.ok(err instanceof ApiError);
-  assert.equal(err.code, code);
-  assert.equal(err.status, status);
-  return true;
+type TestResponse = http.ServerResponse & {
+  body?: string;
+  writtenHeaders?: http.OutgoingHttpHeaders;
+  writtenStatus?: number;
 };
+
+function expectSuccess(result: Result<AuthSession, AuthServiceError>): AuthSession {
+  if (!result.ok) {
+    assert.fail(`expected success, got ${result.error.code}`);
+  }
+
+  return result.value;
+}
+
+function expectAuthError(
+  result: Result<AuthSession, AuthServiceError>,
+  code: AuthServiceError['code'],
+  message?: string,
+): AuthServiceError {
+  if (result.ok) {
+    assert.fail('expected auth error, got success');
+  }
+
+  assert.equal(result.error.code, code);
+  if (message) {
+    assert.equal(result.error.message, message);
+  }
+
+  return result.error;
+}
+
+function createJsonRequest(body: unknown): http.IncomingMessage {
+  return Readable.from([Buffer.from(JSON.stringify(body))]) as unknown as http.IncomingMessage;
+}
+
+function createResponse(): TestResponse {
+  const response = {
+    writeHead(statusCode: number, headers?: http.OutgoingHttpHeaders) {
+      response.writtenStatus = statusCode;
+      response.writtenHeaders = headers;
+      return response;
+    },
+    end(chunk?: unknown) {
+      response.body = chunk?.toString() ?? '';
+      return response;
+    },
+  } as TestResponse;
+
+  return response;
+}
+
+function readResponseJson(response: TestResponse): any {
+  assert.ok(response.body, 'response should have a body');
+  return JSON.parse(response.body);
+}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -62,46 +128,43 @@ describe('AuthService', () => {
 
   describe('register', () => {
     it('returns user and token on success', async () => {
-      const result = await service.register('Alice', 'alice@test.com', 'password123');
+      const result = expectSuccess(await service.register('Alice', 'alice@test.com', 'password123'));
 
       assert.equal(result.user.name, 'Alice');
       assert.equal(result.user.email, 'alice@test.com');
       assert.ok(result.user.id, 'user should have an id');
-      assert.ok(result.user.created_at, 'user should have created_at');
+      assert.ok(result.user.createdAt, 'user should have createdAt');
       assert.ok(result.token, 'should return a token');
       assert.equal((result.user as any).password_hash, undefined, 'user must not expose password_hash');
     });
 
     it('stores a bcrypt hash, not plaintext', async () => {
-      await service.register('Alice', 'alice@test.com', 'password123');
+      expectSuccess(await service.register('Alice', 'alice@test.com', 'password123'));
 
       const stored = await repo.findByEmail('alice@test.com');
       assert.ok(stored, 'row should be stored');
-      assert.match(stored!.password_hash, /^\$2[ab]\$/, 'hash should be bcrypt');
-      assert.notEqual(stored!.password_hash, 'password123', 'must not store plaintext');
+      assert.match(stored!.passwordHash, /^\$2[ab]\$/, 'hash should be bcrypt');
+      assert.notEqual(stored!.passwordHash, 'password123', 'must not store plaintext');
     });
 
-    it('throws EMAIL_TAKEN on duplicate email', async () => {
-      await service.register('Alice', 'alice@test.com', 'password123');
+    it('returns EMAIL_TAKEN on duplicate email', async () => {
+      expectSuccess(await service.register('Alice', 'alice@test.com', 'password123'));
 
-      await assert.rejects(
-        () => service.register('Bob', 'alice@test.com', 'password456'),
-        expectApiError('EMAIL_TAKEN', 409),
-      );
+      const result = await service.register('Bob', 'alice@test.com', 'password456');
+
+      expectAuthError(result, 'EMAIL_TAKEN', 'Email is already registered');
     });
 
-    it('throws INVALID_PASSWORD when password is too short', async () => {
-      await assert.rejects(
-        () => service.register('Alice', 'alice@test.com', 'short'),
-        expectApiError('INVALID_PASSWORD', 400),
-      );
+    it('returns INVALID_PASSWORD when password is too short', async () => {
+      const result = await service.register('Alice', 'alice@test.com', 'short');
+
+      expectAuthError(result, 'INVALID_PASSWORD', 'Password must be 8\u2013100 characters');
     });
 
-    it('throws INVALID_PASSWORD when password is too long', async () => {
-      await assert.rejects(
-        () => service.register('Alice', 'alice@test.com', 'x'.repeat(101)),
-        expectApiError('INVALID_PASSWORD', 400),
-      );
+    it('returns INVALID_PASSWORD when password is too long', async () => {
+      const result = await service.register('Alice', 'alice@test.com', 'x'.repeat(101));
+
+      expectAuthError(result, 'INVALID_PASSWORD', 'Password must be 8\u2013100 characters');
     });
   });
 
@@ -109,44 +172,41 @@ describe('AuthService', () => {
 
   describe('login', () => {
     beforeEach(async () => {
-      await service.register('Alice', 'alice@test.com', 'password123');
+      expectSuccess(await service.register('Alice', 'alice@test.com', 'password123'));
     });
 
     it('returns user and token on success', async () => {
-      const result = await service.login('alice@test.com', 'password123');
+      const result = expectSuccess(await service.login('alice@test.com', 'password123'));
 
       assert.equal(result.user.email, 'alice@test.com');
       assert.equal(result.user.name, 'Alice');
       assert.ok(result.token, 'should return a token');
     });
 
-    it('throws INVALID_CREDENTIALS on wrong password', async () => {
-      await assert.rejects(
-        () => service.login('alice@test.com', 'wrongpassword'),
-        expectApiError('INVALID_CREDENTIALS', 401),
-      );
+    it('returns INVALID_CREDENTIALS on wrong password', async () => {
+      const result = await service.login('alice@test.com', 'wrongpassword');
+
+      expectAuthError(result, 'INVALID_CREDENTIALS', 'Invalid email or password');
     });
 
-    it('throws INVALID_CREDENTIALS on unknown email', async () => {
-      await assert.rejects(
-        () => service.login('nobody@test.com', 'password123'),
-        expectApiError('INVALID_CREDENTIALS', 401),
-      );
+    it('returns INVALID_CREDENTIALS on unknown email', async () => {
+      const result = await service.login('nobody@test.com', 'password123');
+
+      expectAuthError(result, 'INVALID_CREDENTIALS', 'Invalid email or password');
     });
 
-    it('throws the same error for wrong password and unknown email', async () => {
-      const errors: ApiError[] = [];
+    it('returns the same error for wrong password and unknown email', async () => {
+      const wrongPassword = expectAuthError(
+        await service.login('alice@test.com', 'wrongpassword'),
+        'INVALID_CREDENTIALS',
+      );
+      const unknownEmail = expectAuthError(
+        await service.login('nobody@test.com', 'password123'),
+        'INVALID_CREDENTIALS',
+      );
 
-      try { await service.login('alice@test.com', 'wrongpassword'); }
-      catch (e) { errors.push(e as ApiError); }
-
-      try { await service.login('nobody@test.com', 'password123'); }
-      catch (e) { errors.push(e as ApiError); }
-
-      assert.equal(errors.length, 2);
-      assert.equal(errors[0].code, errors[1].code, 'error codes must match');
-      assert.equal(errors[0].status, errors[1].status, 'status codes must match');
-      assert.equal(errors[0].message, errors[1].message, 'messages must match');
+      assert.equal(wrongPassword.code, unknownEmail.code, 'error codes must match');
+      assert.equal(wrongPassword.message, unknownEmail.message, 'messages must match');
     });
   });
 
@@ -154,7 +214,7 @@ describe('AuthService', () => {
 
   describe('verifyToken', () => {
     it('returns the user for a valid token', async () => {
-      const { token } = await service.register('Alice', 'alice@test.com', 'password123');
+      const { token } = expectSuccess(await service.register('Alice', 'alice@test.com', 'password123'));
 
       const user = await service.verifyToken(token);
 
@@ -169,11 +229,96 @@ describe('AuthService', () => {
     });
 
     it('returns null for a tampered token', async () => {
-      const { token } = await service.register('Alice', 'alice@test.com', 'password123');
+      const { token } = expectSuccess(await service.register('Alice', 'alice@test.com', 'password123'));
       const tampered = token.slice(0, -5) + 'XXXXX';
 
       const user = await service.verifyToken(tampered);
       assert.equal(user, null);
+    });
+  });
+});
+
+describe('AuthController', () => {
+  let repo: FakeAuthRepository;
+  let service: AuthService;
+  let controller: AuthController;
+
+  before(() => {
+    process.env.JWT_SECRET = 'test-secret';
+  });
+
+  beforeEach(() => {
+    repo = new FakeAuthRepository();
+    service = new AuthService(repo as any);
+    controller = new AuthController(service);
+  });
+
+  it('unwraps register success responses', async () => {
+    const req = createJsonRequest({ name: 'Alice', email: 'alice@test.com', password: 'password123' });
+    const res = createResponse();
+
+    await controller.register(req, res);
+
+    const body = readResponseJson(res);
+    assert.equal(res.writtenStatus, 201);
+    assert.equal(body.user.email, 'alice@test.com');
+    assert.ok(body.token, 'should return a token');
+    assert.equal(body.ok, undefined);
+    assert.equal(body.value, undefined);
+  });
+
+  it('unwraps login success responses', async () => {
+    expectSuccess(await service.register('Alice', 'alice@test.com', 'password123'));
+    const req = createJsonRequest({ email: 'alice@test.com', password: 'password123' });
+    const res = createResponse();
+
+    await controller.login(req, res);
+
+    const body = readResponseJson(res);
+    assert.equal(res.writtenStatus, 200);
+    assert.equal(body.user.email, 'alice@test.com');
+    assert.ok(body.token, 'should return a token');
+    assert.equal(body.ok, undefined);
+    assert.equal(body.value, undefined);
+  });
+
+  it('maps invalid register passwords to 400', async () => {
+    const req = createJsonRequest({ name: 'Alice', email: 'alice@test.com', password: 'short' });
+    const res = createResponse();
+
+    await controller.register(req, res);
+
+    const body = readResponseJson(res);
+    assert.equal(res.writtenStatus, 400);
+    assert.deepEqual(body, {
+      error: { code: 'INVALID_PASSWORD', message: 'Password must be 8\u2013100 characters' },
+    });
+  });
+
+  it('maps duplicate register emails to 409', async () => {
+    expectSuccess(await service.register('Alice', 'alice@test.com', 'password123'));
+    const req = createJsonRequest({ name: 'Bob', email: 'alice@test.com', password: 'password456' });
+    const res = createResponse();
+
+    await controller.register(req, res);
+
+    const body = readResponseJson(res);
+    assert.equal(res.writtenStatus, 409);
+    assert.deepEqual(body, {
+      error: { code: 'EMAIL_TAKEN', message: 'Email is already registered' },
+    });
+  });
+
+  it('maps invalid login credentials to 401', async () => {
+    const req = createJsonRequest({ email: 'nobody@test.com', password: 'password123' });
+    const res = createResponse();
+
+    await controller.login(req, res);
+
+    const body = readResponseJson(res);
+    assert.equal(res.writtenStatus, 401);
+    assert.deepEqual(body, {
+      error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email or password' },
     });
   });
 });

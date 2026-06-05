@@ -6,32 +6,22 @@ import { AuthRepository } from './auth/auth.repository.js';
 import { AuthService } from './auth/auth.service.js';
 import { AuthController } from './auth/auth.controller.js';
 import { HealthController } from './health/health.controller.js';
+import { Router } from './router.js';
 
 const authRepo = new AuthRepository(pool);
 const authService = new AuthService(authRepo);
 const authController = new AuthController(authService);
 const healthController = new HealthController();
+const router = new Router();
+
+router.get('/api/health', (req, res) => healthController.health(req, res));
+router.post('/api/register', (req, res) => authController.register(req, res));
+router.post('/api/login', (req, res) => authController.login(req, res));
 
 const server = http.createServer(async (req, res) => {
   const start = Date.now();
   try {
-    if (req.method === 'GET' && req.url === '/api/health') {
-      healthController.health(req, res);
-      return;
-    }
-
-    if (req.method === 'POST' && req.url === '/api/register') {
-      await authController.register(req, res);
-      return;
-    }
-
-    if (req.method === 'POST' && req.url === '/api/login') {
-      await authController.login(req, res);
-      return;
-    }
-
-    res.writeHead(404);
-    res.end();
+    await router.handle(req, res);
   } catch (err: unknown) {
     sendError(res, err);
   } finally {

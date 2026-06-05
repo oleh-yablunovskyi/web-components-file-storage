@@ -8,6 +8,7 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "dev": "tsc --watch",
+    "typecheck:test": "tsc -p test/tsconfig.json --noEmit",
     "test": "node --import tsx --test test/*.test.ts"
   },
   "devDependencies": {

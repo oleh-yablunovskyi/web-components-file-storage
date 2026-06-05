@@ -1,4 +1,5 @@
-import { register } from '../api.js';
+import { register } from '../auth-api.js';
+import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from '../consts.js';
 
 const template = document.createElement('template');
 template.innerHTML = `
@@ -55,7 +56,7 @@ template.innerHTML = `
 
     <label for="password">Password</label>
     <input id="password" name="password" type="password" required
-      minlength="8" maxlength="100" autocomplete="new-password" />
+      minlength="${PASSWORD_MIN_LENGTH}" maxlength="${PASSWORD_MAX_LENGTH}" autocomplete="new-password" />
 
     <p class="error" id="error" hidden></p>
     <button type="submit">Register</button>

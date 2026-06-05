@@ -3,7 +3,7 @@ interface ApiError {
   message: string;
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = {};
   const token = localStorage.getItem('jwt');
   if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -31,22 +31,4 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   }
 
   return res.json() as Promise<T>;
-}
-
-interface RegisterResponse {
-  user: { id: string; name: string; email: string; created_at: string };
-  token: string;
-}
-
-export async function register(name: string, email: string, password: string): Promise<RegisterResponse> {
-  return request<RegisterResponse>('POST', '/api/register', { name, email, password });
-}
-
-interface LoginResponse {
-  user: { id: string; name: string; email: string; created_at: string };
-  token: string;
-}
-
-export async function login(email: string, password: string): Promise<LoginResponse> {
-  return request<LoginResponse>('POST', '/api/login', { email, password });
 }
