@@ -6,21 +6,64 @@
 
 ## Running
 
+Copy env file:
+
 ```bash
-# Copy env file
 cp .env.example .env
+```
 
-# Start the stack
-./up.sh
+Start the stack:
 
-# Start with file watching (auto-rebuilds on save)
-./dev.sh
+```bash
+./scripts/up.sh
+```
 
-# Stop (preserves DB data)
-./down.sh
+Start with file watching (auto-rebuilds on save):
 
-# Wipe DB and restart fresh
-./reset.sh
+```bash
+./scripts/dev.sh
+```
+
+Stop (preserves DB data):
+
+```bash
+./scripts/down.sh
+```
+
+Wipe DB and restart fresh:
+
+```bash
+./scripts/reset.sh
 ```
 
 App runs at `http://localhost:8080`.
+
+## Unit tests
+
+Run unit tests:
+
+```bash
+./scripts/test-unit.sh
+```
+
+## End-to-end tests
+
+Self-contained — starts the stack, runs Playwright, tears it down:
+
+```bash
+./scripts/test-e2e.sh
+```
+
+Keep the stack up after tests:
+
+```bash
+KEEP_STACK=1 ./scripts/test-e2e.sh
+```
+
+Step through tests in the Playwright Inspector (headed browser, pauses before every action):
+
+```bash
+PWDEBUG=1 ./scripts/test-e2e.sh
+```
+
+Extra flags are forwarded to `playwright test` (e.g. `--headed`, `--ui`, `-g "pattern"`).
