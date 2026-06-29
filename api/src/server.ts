@@ -1,6 +1,7 @@
 import http from 'node:http';
 import { config } from './config.js';
 import { pool } from './db.js';
+import { waitForObjectStore } from './s3.js';
 import { sendError } from './utils.js';
 import { AuthRepository } from './auth/auth.repository.js';
 import { AuthService } from './auth/auth.service.js';
@@ -36,6 +37,8 @@ try {
   console.error('[api] db connection failed:', (err as Error).message);
   process.exit(1);
 }
+
+await waitForObjectStore();
 
 server.listen(config.port, () => {
   console.log(`[api] listening on :${config.port}`);
