@@ -1,4 +1,5 @@
-import { login } from '../auth-api.js';
+import { login } from '../api/auth-api.js';
+import { setToken } from '../stores/token-store.js';
 import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from '../consts.js';
 
 const template = document.createElement('template');
@@ -85,7 +86,7 @@ class LoginForm extends HTMLElement {
 
       try {
         const { token } = await login(email, password);
-        localStorage.setItem('jwt', token);
+        setToken(token);
         location.hash = '#/home';
       } catch (err: any) {
         errorEl.textContent = err.message;
