@@ -1,4 +1,4 @@
-import { S3Client, HeadBucketCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, HeadBucketCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import type { Readable } from 'node:stream';
 import { config } from './config.js';
@@ -17,6 +17,7 @@ export const s3Client = new S3Client({
 
 export interface ObjectStore {
   put(key: string, body: Readable, contentType: string): Promise<void>;
+  get(key: string): Promise<Readable>;
   delete(key: string): Promise<void>;
 }
 
@@ -39,6 +40,13 @@ export class S3ObjectStore implements ObjectStore {
       },
     });
     await upload.done();
+  }
+
+  async get(key: string): Promise<Readable> {
+    const res = await this.client.send(
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+    );
+    return res.Body as Readable;
   }
 
   async delete(key: string): Promise<void> {

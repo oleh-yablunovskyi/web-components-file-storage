@@ -35,6 +35,8 @@ router.post('/api/login', (req, res) => authController.login(req, res));
 
 router.post('/api/files', requireAuth(authService, (req, res, user) => filesController.upload(req, res, user)));
 router.get('/api/files', requireAuth(authService, (req, res, user) => filesController.list(req, res, user)));
+router.get('/api/files/:id', requireAuth(authService, (req, res, user, params) => filesController.download(req, res, user, params.id)));
+router.delete('/api/files/:id', requireAuth(authService, (req, res, user, params) => filesController.delete(req, res, user, params.id)));
 
 const server = http.createServer(async (req, res) => {
   const start = Date.now();

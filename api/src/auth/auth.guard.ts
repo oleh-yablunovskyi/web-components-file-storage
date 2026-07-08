@@ -7,10 +7,15 @@ type AuthedHandler = (
   req: http.IncomingMessage,
   res: http.ServerResponse,
   user: User,
+  params: Record<string, string>,
 ) => void | Promise<void>;
 
 export function requireAuth(authService: AuthService, handler: AuthedHandler) {
-  return async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
+  return async (
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    params: Record<string, string> = {},
+  ): Promise<void> => {
     const header = req.headers.authorization;
     const token = header?.startsWith('Bearer ') ? header.slice('Bearer '.length) : null;
     if (!token) {
@@ -24,6 +29,6 @@ export function requireAuth(authService: AuthService, handler: AuthedHandler) {
       return;
     }
 
-    await handler(req, res, user);
+    await handler(req, res, user, params);
   };
 }

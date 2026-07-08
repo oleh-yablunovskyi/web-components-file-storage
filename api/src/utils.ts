@@ -29,3 +29,7 @@ export function sendError(res: http.ServerResponse, err: unknown) {
   if (status === 500) console.error(err);
   sendJson(res, status, { error: { code, message } });
 }
+
+export function sendNotFound(res: http.ServerResponse) {
+  sendJson(res, 404, { error: { code: 'NOT_FOUND', message: 'Not found' } });
+}

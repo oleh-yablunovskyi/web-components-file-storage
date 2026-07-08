@@ -76,7 +76,7 @@ export class FilesStore {
     try {
       await this.objectStore.put(s3Key, limiter, mime);
     } catch (err) {
-      await this.safeDelete(s3Key);
+      await this.tryDeleteObject(s3Key);
       if (limiter.bytes > MAX_FILE_BYTES) {
         return { ok: false, error: TOO_LARGE_ERROR };
       }
@@ -88,7 +88,7 @@ export class FilesStore {
       const meta = await this.repo.insert({ id, userId, name, mimeType: mime, sizeBytes: limiter.bytes, s3Key });
       return { ok: true, value: meta };
     } catch (err) {
-      await this.safeDelete(s3Key); // best-effort cleanup
+      await this.tryDeleteObject(s3Key); // best-effort cleanup
       throw err;
     }
   }
@@ -97,11 +97,29 @@ export class FilesStore {
     return this.repo.list(userId);
   }
 
-  private async safeDelete(key: string): Promise<void> {
+  // Returns the owner's metadata + a readable body stream
+  async getStream(userId: string, fileId: string): Promise<{ meta: FileMeta; stream: Readable } | null> {
+    const file = await this.repo.get(userId, fileId);
+    if (!file) return null;
+
+    const stream = await this.objectStore.get(file.s3Key);
+    const { s3Key, ...meta } = file;
+    return { meta, stream };
+  }
+
+  async delete(userId: string, fileId: string): Promise<boolean> {
+    const s3Key = await this.repo.delete(userId, fileId);
+    if (s3Key === null) return false;
+
+    await this.tryDeleteObject(s3Key);
+    return true;
+  }
+
+  private async tryDeleteObject(key: string): Promise<void> {
     try {
       await this.objectStore.delete(key);
-    } catch {
-      // best-effort
+    } catch (err) {
+      console.error(`[files] failed to delete object ${key}:`, (err as Error).message);
     }
   }
 }

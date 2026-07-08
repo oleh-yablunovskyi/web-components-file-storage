@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 import { FilesStore, MAX_FILE_BYTES } from '../src/files/files.store.js';
 import type { FilesStoreError } from '../src/files/files.store.js';
-import type { FileInsert, FilesRepo } from '../src/files/files.repository.js';
+import type { FileInsert, FilesRepo, StoredFile } from '../src/files/files.repository.js';
 import type { ObjectStore } from '../src/s3.js';
 import type { FileMeta } from '../src/files/file-meta.interface.js';
 import type { Result } from '../src/types/result.js';
@@ -38,6 +38,19 @@ class FakeFilesRepository implements FilesRepo {
       .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt))
       .map((r) => ({ id: r.id, name: r.name, mimeType: r.mimeType, sizeBytes: r.sizeBytes, uploadedAt: r.uploadedAt }));
   }
+
+  async get(userId: string, id: string): Promise<StoredFile | null> {
+    const r = this.rows.get(id);
+    if (!r || r.userId !== userId) return null;
+    return { id: r.id, name: r.name, mimeType: r.mimeType, sizeBytes: r.sizeBytes, uploadedAt: r.uploadedAt, s3Key: r.s3Key };
+  }
+
+  async delete(userId: string, id: string): Promise<string | null> {
+    const r = this.rows.get(id);
+    if (!r || r.userId !== userId) return null;
+    this.rows.delete(id);
+    return r.s3Key;
+  }
 }
 
 class FakeObjectStore implements ObjectStore {
@@ -54,6 +67,12 @@ class FakeObjectStore implements ObjectStore {
     // a real aborted upload that commits nothing.
     for await (const chunk of body) chunks.push(chunk as Buffer);
     this.objects.set(key, { content: Buffer.concat(chunks), contentType });
+  }
+
+  async get(key: string): Promise<Readable> {
+    const obj = this.objects.get(key);
+    if (!obj) throw new Error(`no such key: ${key}`);
+    return Readable.from([obj.content]);
   }
 
   async delete(key: string): Promise<void> {
@@ -188,6 +207,61 @@ describe('FilesStore', () => {
       const listed = await store.list('user-2');
 
       assert.deepEqual(listed, []);
+    });
+  });
+
+  describe('getStream', () => {
+    it('returns metadata and a body stream for the owner', async () => {
+      const meta = expectSuccess(await store.upload('user-1', 'hello.txt', 'text/plain', streamOf('hello')));
+
+      const result = await store.getStream('user-1', meta.id);
+
+      assert.ok(result, 'owner should get a result');
+      assert.equal(result!.meta.id, meta.id);
+      assert.equal(result!.meta.name, 'hello.txt');
+      assert.equal(result!.meta.mimeType, 'text/plain');
+
+      const chunks: Buffer[] = [];
+      for await (const chunk of result!.stream) chunks.push(chunk as Buffer);
+      assert.equal(Buffer.concat(chunks).toString(), 'hello');
+    });
+
+    it('signals not-found for an id owned by another user', async () => {
+      const meta = expectSuccess(await store.upload('user-1', 'hello.txt', 'text/plain', streamOf('hello')));
+
+      assert.equal(await store.getStream('user-2', meta.id), null);
+    });
+
+    it('signals not-found for a missing id', async () => {
+      assert.equal(await store.getStream('user-1', 'does-not-exist'), null);
+    });
+  });
+
+  describe('delete', () => {
+    it('removes the row and the object for the owner', async () => {
+      const meta = expectSuccess(await store.upload('user-1', 'hello.txt', 'text/plain', streamOf('hello')));
+      const key = `user/user-1/${meta.id}`;
+
+      const deleted = await store.delete('user-1', meta.id);
+
+      assert.equal(deleted, true);
+      assert.equal(repo.rows.has(meta.id), false, 'DB row should be removed');
+      assert.equal(objectStore.objects.has(key), false, 'S3 object should be removed');
+    });
+
+    it('does not delete a file owned by another user', async () => {
+      const meta = expectSuccess(await store.upload('user-1', 'hello.txt', 'text/plain', streamOf('hello')));
+      const key = `user/user-1/${meta.id}`;
+
+      const deleted = await store.delete('user-2', meta.id);
+
+      assert.equal(deleted, false);
+      assert.equal(repo.rows.has(meta.id), true, 'DB row should remain');
+      assert.equal(objectStore.objects.has(key), true, 'S3 object should remain');
+    });
+
+    it('signals no-op for a missing id', async () => {
+      assert.equal(await store.delete('user-1', 'does-not-exist'), false);
     });
   });
 });

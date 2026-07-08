@@ -9,6 +9,14 @@ interface FileRow {
   uploaded_at: Date; // pg parses timestamptz into a Date
 }
 
+interface StoredFileRow extends FileRow {
+  s3_key: string;
+}
+
+export interface StoredFile extends FileMeta {
+  s3Key: string;
+}
+
 export interface FileInsert {
   id: string;
   userId: string;
@@ -31,6 +39,8 @@ function toMeta(row: FileRow): FileMeta {
 export interface FilesRepo {
   insert(file: FileInsert): Promise<FileMeta>;
   list(userId: string): Promise<FileMeta[]>;
+  get(userId: string, id: string): Promise<StoredFile | null>;
+  delete(userId: string, id: string): Promise<string | null>;
 }
 
 export class FilesRepository implements FilesRepo {
@@ -53,5 +63,23 @@ export class FilesRepository implements FilesRepo {
       [userId],
     );
     return rows.map(toMeta);
+  }
+
+  async get(userId: string, id: string): Promise<StoredFile | null> {
+    const { rows } = await this.pool.query<StoredFileRow>(
+      `SELECT id, name, mime_type, size_bytes, uploaded_at, s3_key
+       FROM files WHERE id = $1 AND user_id = $2`,
+      [id, userId],
+    );
+    const row = rows[0];
+    return row ? { ...toMeta(row), s3Key: row.s3_key } : null;
+  }
+
+  async delete(userId: string, id: string): Promise<string | null> {
+    const { rows } = await this.pool.query<{ s3_key: string }>(
+      `DELETE FROM files WHERE id = $1 AND user_id = $2 RETURNING s3_key`,
+      [id, userId],
+    );
+    return rows[0]?.s3_key ?? null;
   }
 }

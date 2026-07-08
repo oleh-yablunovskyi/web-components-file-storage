@@ -31,6 +31,9 @@ class FileList extends HTMLElement {
     super();
     this.shadow = this.attachShadow({ mode: 'open' });
     this.shadow.appendChild(template.content.cloneNode(true));
+
+    // A deleted <file-row> refetches the whole list, dropping the removed row.
+    this.addEventListener('file-deleted', () => this.refresh());
   }
 
   connectedCallback() {

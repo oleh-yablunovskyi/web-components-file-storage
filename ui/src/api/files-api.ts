@@ -35,3 +35,22 @@ export async function uploadFile(file: File): Promise<FileMeta> {
 
   return res.json() as Promise<FileMeta>;
 }
+
+export async function downloadFile(id: string): Promise<Blob> {
+  const res = await fetch(`/api/files/${id}`, { headers: getAuthHeaders() });
+
+  logoutIfUnauthorized(res);
+  await ensureOk(res);
+
+  return res.blob();
+}
+
+export async function deleteFile(id: string): Promise<void> {
+  const res = await fetch(`/api/files/${id}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+
+  logoutIfUnauthorized(res);
+  await ensureOk(res);
+}

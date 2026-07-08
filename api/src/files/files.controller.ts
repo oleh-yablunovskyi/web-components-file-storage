@@ -1,8 +1,9 @@
 import type http from 'node:http';
+import { pipeline } from 'node:stream/promises';
 import busboy from 'busboy';
 import type { User } from '../auth/user.interface.js';
 import { ApiError } from '../errors.js';
-import { sendJson } from '../utils.js';
+import { sendJson, sendNotFound } from '../utils.js';
 import type { Result } from '../types/result.js';
 import { FilesStore, MAX_FILE_BYTES, TOO_LARGE_ERROR } from './files.store.js';
 import type { FilesStoreError } from './files.store.js';
@@ -24,7 +25,7 @@ export class FilesController {
       return;
     }
 
-    const result = await this.parse(req, user.id);
+    const result = await this.parseAndStore(req, user.id);
     if (!result.ok) {
       sendJson(res, FILE_ERROR_STATUS[result.error.code], { error: result.error });
       return;
@@ -38,7 +39,38 @@ export class FilesController {
     sendJson(res, 200, files);
   }
 
-  private parse(req: http.IncomingMessage, userId: string): Promise<Result<FileMeta, FilesStoreError>> {
+  async download(_req: http.IncomingMessage, res: http.ServerResponse, user: User, id: string) {
+    const file = await this.filesStore.getStream(user.id, id);
+    if (!file) {
+      sendNotFound(res);
+      return;
+    }
+
+    res.writeHead(200, {
+      'Content-Type': file.meta.mimeType,
+      'Content-Disposition': `attachment; filename="${file.meta.name}"`,
+    });
+
+    // Stream straight through with no buffering; on a mid-stream error `pipeline`
+    // tears down both streams, so headers are already sent — just log it.
+    try {
+      await pipeline(file.stream, res);
+    } catch (err) {
+      console.error('[files] download stream failed:', (err as Error).message);
+    }
+  }
+
+  async delete(_req: http.IncomingMessage, res: http.ServerResponse, user: User, id: string) {
+    const deleted = await this.filesStore.delete(user.id, id);
+    if (!deleted) {
+      sendNotFound(res);
+      return;
+    }
+
+    sendJson(res, 200, { success: true });
+  }
+
+  private parseAndStore(req: http.IncomingMessage, userId: string): Promise<Result<FileMeta, FilesStoreError>> {
     return new Promise((resolve, reject) => {
       let bb: busboy.Busboy;
 
