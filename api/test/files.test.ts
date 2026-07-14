@@ -1,6 +1,8 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
+import type { User } from '../src/auth/user.interface.js';
+import { FilesController } from '../src/files/files.controller.js';
 import { FilesStore, MAX_FILE_BYTES } from '../src/files/files.store.js';
 import type { FilesStoreError } from '../src/files/files.store.js';
 import type { FileInsert, FilesRepo, StoredFile } from '../src/files/files.repository.js';
@@ -263,5 +265,27 @@ describe('FilesStore', () => {
     it('signals no-op for a missing id', async () => {
       assert.equal(await store.delete('user-1', 'does-not-exist'), false);
     });
+  });
+});
+
+describe('FilesController upload', () => {
+  it('keeps a non-ASCII filename intact (browsers send it as raw UTF-8)', async () => {
+    const repo = new FakeFilesRepository();
+    const controller = new FilesController(new FilesStore(repo, new FakeObjectStore()));
+    const body =
+      '--b\r\n' +
+      'Content-Disposition: form-data; name="file"; filename="таска.txt"\r\n' +
+      'Content-Type: text/plain\r\n\r\n' +
+      'hello\r\n' +
+      '--b--\r\n';
+    const req = Object.assign(Readable.from([Buffer.from(body)]), {
+      headers: { 'content-type': 'multipart/form-data; boundary=b' },
+    });
+    const res = { statusCode: 0, writeHead(status: number) { this.statusCode = status; return this; }, end() {} };
+
+    await controller.upload(req as any, res as any, { id: 'user-1' } as User);
+
+    assert.equal(res.statusCode, 201);
+    assert.equal([...repo.rows.values()][0].name, 'таска.txt');
   });
 });

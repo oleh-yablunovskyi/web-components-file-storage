@@ -3,7 +3,7 @@ import { pipeline } from 'node:stream/promises';
 import busboy from 'busboy';
 import type { User } from '../auth/user.interface.js';
 import { ApiError } from '../errors.js';
-import { sendJson, sendNotFound } from '../utils.js';
+import { contentDisposition, sendJson, sendNotFound } from '../utils.js';
 import type { Result } from '../types/result.js';
 import { FilesStore, MAX_FILE_BYTES, TOO_LARGE_ERROR } from './files.store.js';
 import type { FilesStoreError } from './files.store.js';
@@ -48,7 +48,7 @@ export class FilesController {
 
     res.writeHead(200, {
       'Content-Type': file.meta.mimeType,
-      'Content-Disposition': `attachment; filename="${file.meta.name}"`,
+      'Content-Disposition': contentDisposition(file.meta.name),
     });
 
     // Stream straight through with no buffering; on a mid-stream error `pipeline`
@@ -75,7 +75,9 @@ export class FilesController {
       let bb: busboy.Busboy;
 
       try {
-        bb = busboy({ headers: req.headers, limits: { files: 1 } });
+        // defParamCharset: browsers send filenames as raw UTF-8 bytes, while busboy's
+        // default is latin1, which would mess up any non-ASCII name.
+        bb = busboy({ headers: req.headers, limits: { files: 1 }, defParamCharset: 'utf8' });
       } catch {
         reject(new ApiError(400, 'INVALID_UPLOAD', 'Invalid multipart request'));
         return;
