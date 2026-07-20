@@ -109,11 +109,14 @@ function expectSuccess(result: Result<FileMeta, FilesStoreError>): FileMeta {
   return result.value;
 }
 
-function expectError(result: Result<FileMeta, FilesStoreError>, code: FilesStoreError['code']): void {
+function expectError(result: Result<FileMeta, FilesStoreError>, code: FilesStoreError['code'], message?: string): void {
   if (result.ok) {
     assert.fail('expected error, got success');
   }
   assert.equal(result.error.code, code);
+  if (message !== undefined) {
+    assert.equal(result.error.message, message);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -133,7 +136,7 @@ describe('FilesStore', () => {
 
   describe('upload', () => {
     it('writes both stores and returns metadata', async () => {
-      const meta = expectSuccess(await store.upload('user-1', 'hello.txt', 'text/plain', streamOf('hello')));
+      const meta = expectSuccess(await store.upload('user-1', 'hello.txt', streamOf('hello')));
 
       assert.ok(meta.id, 'should have an id');
       assert.equal(meta.name, 'hello.txt');
@@ -152,16 +155,36 @@ describe('FilesStore', () => {
       assert.ok(repo.rows.has(meta.id), 'row should use the app-generated id');
     });
 
-    it('rejects a disallowed mime type, writing neither store', async () => {
-      const result = await store.upload('user-1', 'evil.exe', 'application/x-msdownload', streamOf('data'));
+    it('rejects a disallowed extension, writing neither store', async () => {
+      const result = await store.upload('user-1', 'evil.exe', streamOf('data'));
 
-      expectError(result, 'UNSUPPORTED_TYPE');
+      expectError(result, 'UNSUPPORTED_TYPE', 'Unsupported file type: .exe');
       assert.equal(objectStore.objects.size, 0, 'nothing should be written to S3');
       assert.equal(repo.rows.size, 0, 'nothing should be written to the DB');
     });
 
+    it('rejects a filename with no extension', async () => {
+      const result = await store.upload('user-1', 'README', streamOf('data'));
+
+      expectError(result, 'UNSUPPORTED_TYPE', 'Unsupported file type: (no extension)');
+    });
+
+    it('rejects a bare dotfile name (".rar" has no extension)', async () => {
+      const result = await store.upload('user-1', '.rar', streamOf('data'));
+
+      expectError(result, 'UNSUPPORTED_TYPE', 'Unsupported file type: (no extension)');
+    });
+
+    it('maps uppercase extensions case-insensitively', async () => {
+      const rar = expectSuccess(await store.upload('user-1', 'SAMPLE.RAR', streamOf('data')));
+      const jpg = expectSuccess(await store.upload('user-1', 'photo.JPG', streamOf('data')));
+
+      assert.equal(rar.mimeType, 'application/x-rar-compressed');
+      assert.equal(jpg.mimeType, 'image/jpeg');
+    });
+
     it('rejects an oversized upload, writing neither store', async () => {
-      const result = await store.upload('user-1', 'big.png', 'image/png', oversizedStream());
+      const result = await store.upload('user-1', 'big.png', oversizedStream());
 
       expectError(result, 'TOO_LARGE');
       assert.equal(objectStore.objects.size, 0, 'nothing should be committed to S3');
@@ -171,7 +194,7 @@ describe('FilesStore', () => {
     it('deletes the S3 object when the DB insert fails (no orphan)', async () => {
       repo.failNextInsert = true;
 
-      await assert.rejects(store.upload('user-1', 'hello.txt', 'text/plain', streamOf('hello')));
+      await assert.rejects(store.upload('user-1', 'hello.txt', streamOf('hello')));
 
       assert.equal(objectStore.objects.size, 0, 'orphaned object should be cleaned up');
       assert.equal(repo.rows.size, 0, 'no row should remain');
@@ -180,7 +203,7 @@ describe('FilesStore', () => {
     it('propagates an object-store failure without writing a DB row', async () => {
       objectStore.failNextPut = true;
 
-      await assert.rejects(store.upload('user-1', 'hello.txt', 'text/plain', streamOf('hello')));
+      await assert.rejects(store.upload('user-1', 'hello.txt', streamOf('hello')));
 
       assert.equal(objectStore.objects.size, 0, 'nothing should be committed to S3');
       assert.equal(repo.rows.size, 0, 'no row should be written');
@@ -190,9 +213,9 @@ describe('FilesStore', () => {
 
   describe('list', () => {
     it("returns only the caller's files, newest-first", async () => {
-      const first = expectSuccess(await store.upload('user-1', 'a.txt', 'text/plain', streamOf('a')));
-      const second = expectSuccess(await store.upload('user-1', 'b.txt', 'text/plain', streamOf('b')));
-      expectSuccess(await store.upload('user-2', 'c.txt', 'text/plain', streamOf('c')));
+      const first = expectSuccess(await store.upload('user-1', 'a.txt', streamOf('a')));
+      const second = expectSuccess(await store.upload('user-1', 'b.txt', streamOf('b')));
+      expectSuccess(await store.upload('user-2', 'c.txt', streamOf('c')));
 
       const listed = await store.list('user-1');
 
@@ -204,7 +227,7 @@ describe('FilesStore', () => {
     });
 
     it('returns an empty list for a user with no files', async () => {
-      expectSuccess(await store.upload('user-1', 'a.txt', 'text/plain', streamOf('a')));
+      expectSuccess(await store.upload('user-1', 'a.txt', streamOf('a')));
 
       const listed = await store.list('user-2');
 
@@ -214,7 +237,7 @@ describe('FilesStore', () => {
 
   describe('getStream', () => {
     it('returns metadata and a body stream for the owner', async () => {
-      const meta = expectSuccess(await store.upload('user-1', 'hello.txt', 'text/plain', streamOf('hello')));
+      const meta = expectSuccess(await store.upload('user-1', 'hello.txt', streamOf('hello')));
 
       const result = await store.getStream('user-1', meta.id);
 
@@ -229,7 +252,7 @@ describe('FilesStore', () => {
     });
 
     it('signals not-found for an id owned by another user', async () => {
-      const meta = expectSuccess(await store.upload('user-1', 'hello.txt', 'text/plain', streamOf('hello')));
+      const meta = expectSuccess(await store.upload('user-1', 'hello.txt', streamOf('hello')));
 
       assert.equal(await store.getStream('user-2', meta.id), null);
     });
@@ -241,7 +264,7 @@ describe('FilesStore', () => {
 
   describe('delete', () => {
     it('removes the row and the object for the owner', async () => {
-      const meta = expectSuccess(await store.upload('user-1', 'hello.txt', 'text/plain', streamOf('hello')));
+      const meta = expectSuccess(await store.upload('user-1', 'hello.txt', streamOf('hello')));
       const key = `user/user-1/${meta.id}`;
 
       const deleted = await store.delete('user-1', meta.id);
@@ -252,7 +275,7 @@ describe('FilesStore', () => {
     });
 
     it('does not delete a file owned by another user', async () => {
-      const meta = expectSuccess(await store.upload('user-1', 'hello.txt', 'text/plain', streamOf('hello')));
+      const meta = expectSuccess(await store.upload('user-1', 'hello.txt', streamOf('hello')));
       const key = `user/user-1/${meta.id}`;
 
       const deleted = await store.delete('user-2', meta.id);
@@ -269,23 +292,57 @@ describe('FilesStore', () => {
 });
 
 describe('FilesController upload', () => {
-  it('keeps a non-ASCII filename intact (browsers send it as raw UTF-8)', async () => {
-    const repo = new FakeFilesRepository();
-    const controller = new FilesController(new FilesStore(repo, new FakeObjectStore()));
+  let repo: FakeFilesRepository;
+  let controller: FilesController;
+
+  beforeEach(() => {
+    repo = new FakeFilesRepository();
+    controller = new FilesController(new FilesStore(repo, new FakeObjectStore()));
+  });
+
+  // Sends one file part as raw multipart through real busboy.
+  async function uploadPart(filename: string, declaredType: string) {
     const body =
       '--b\r\n' +
-      'Content-Disposition: form-data; name="file"; filename="таска.txt"\r\n' +
-      'Content-Type: text/plain\r\n\r\n' +
+      `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
+      `Content-Type: ${declaredType}\r\n\r\n` +
       'hello\r\n' +
       '--b--\r\n';
     const req = Object.assign(Readable.from([Buffer.from(body)]), {
       headers: { 'content-type': 'multipart/form-data; boundary=b' },
     });
-    const res = { statusCode: 0, writeHead(status: number) { this.statusCode = status; return this; }, end() {} };
+    const res = {
+      statusCode: 0,
+      body: '',
+      writeHead(status: number) { this.statusCode = status; return this; },
+      end(chunk?: string) { this.body = chunk ?? ''; },
+    };
 
     await controller.upload(req as any, res as any, { id: 'user-1' } as User);
+    return res;
+  }
+
+  it('keeps a non-ASCII filename intact (browsers send it as raw UTF-8)', async () => {
+    const res = await uploadPart('таска.txt', 'text/plain');
 
     assert.equal(res.statusCode, 201);
     assert.equal([...repo.rows.values()][0].name, 'таска.txt');
+  });
+
+  it('accepts a .rar part declared as application/octet-stream (the real-browser wire value)', async () => {
+    const res = await uploadPart('sample.rar', 'application/octet-stream');
+
+    assert.equal(res.statusCode, 201);
+    assert.equal([...repo.rows.values()][0].mimeType, 'application/x-rar-compressed');
+  });
+
+  it('rejects a disallowed extension even when the declared type is allowlisted', async () => {
+    const res = await uploadPart('evil.exe', 'image/png');
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(JSON.parse(res.body), {
+      error: { code: 'UNSUPPORTED_TYPE', message: 'Unsupported file type: .exe' },
+    });
+    assert.equal(repo.rows.size, 0, 'nothing should be written to the DB');
   });
 });

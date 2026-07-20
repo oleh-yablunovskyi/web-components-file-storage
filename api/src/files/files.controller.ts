@@ -88,7 +88,7 @@ export class FilesController {
       bb.on('file', (_field, stream, info) => {
         // On abort, bb.destroy() errors this stream; an 'error' with no listener crashes the process.
         stream.on('error', () => {});
-        pendingUpload = this.filesStore.upload(userId, info.filename, info.mimeType, stream);
+        pendingUpload = this.filesStore.upload(userId, info.filename, stream);
       });
       bb.on('error', reject);
       bb.on('close', async () => {

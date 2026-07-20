@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import path from 'node:path';
 import { Transform } from 'node:stream';
 import type { Readable } from 'node:stream';
 import type { Result } from '../types/result.js';
@@ -6,11 +7,14 @@ import type { ObjectStore } from '../s3.js';
 import type { FilesRepo } from './files.repository.js';
 import type { FileMeta } from './file-meta.interface.js';
 
-const ALLOWED_MIME_TYPES = new Set([
-  'image/png',
-  'image/jpeg',
-  'text/plain',
-  'application/x-rar-compressed',
+// The allowlist: the declared part type is untrustworthy, so the stored
+// type is derived from the filename extension instead.
+const MIME_BY_EXTENSION = new Map([
+  ['.png', 'image/png'],
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
+  ['.txt', 'text/plain'],
+  ['.rar', 'application/x-rar-compressed'],
 ]);
 
 export const MAX_FILE_BYTES = 25 * 1024 * 1024; // 25 MB
@@ -53,12 +57,16 @@ export class FilesStore {
   async upload(
     userId: string,
     name: string,
-    mime: string,
     stream: Readable,
   ): Promise<Result<FileMeta, FilesStoreError>> {
-    if (!ALLOWED_MIME_TYPES.has(mime)) {
+    const ext = path.extname(name).toLowerCase();
+    const mime = MIME_BY_EXTENSION.get(ext);
+    if (!mime) {
       stream.resume(); // drain so the multipart parser can finish
-      return { ok: false, error: { code: 'UNSUPPORTED_TYPE', message: `Unsupported file type: ${mime}` } };
+      return {
+        ok: false,
+        error: { code: 'UNSUPPORTED_TYPE', message: `Unsupported file type: ${ext || '(no extension)'}` },
+      };
     }
 
     // Id must be known before streaming (it's the S3 key), so generate it app-side.

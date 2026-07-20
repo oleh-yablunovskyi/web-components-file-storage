@@ -6,7 +6,7 @@ const ICONS: Record<string, string> = {
   'image/png': '🖼️',
   'image/jpeg': '🖼️',
   'text/plain': '📄',
-  'application/x-rar-compressed': '🗜️',
+  'application/x-rar-compressed': '📦',
 };
 
 function iconFor(mimeType: string): string {

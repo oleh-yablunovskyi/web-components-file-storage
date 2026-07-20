@@ -21,9 +21,13 @@ async function register(page: Page, email: string, password = 'password123', nam
 }
 
 // Selects the fixture and submits; assertions on the outcome stay in the tests.
-async function uploadFixture(page: Page, fixture: string) {
+// mimeType overrides the declared part type Playwright would otherwise infer.
+async function uploadFixture(page: Page, fixture: string, mimeType?: string) {
   await page.getByRole('button', { name: 'Upload' }).click();
-  await page.locator('upload-modal input[type="file"]').setInputFiles(fixturePath(fixture));
+  const files = mimeType
+    ? { name: fixture, mimeType, buffer: readFileSync(fixturePath(fixture)) }
+    : fixturePath(fixture);
+  await page.locator('upload-modal input[type="file"]').setInputFiles(files);
   await page.locator('upload-modal').getByRole('button', { name: 'Upload' }).click();
 }
 
@@ -90,7 +94,8 @@ test('clicking a txt filename shows the text content', async ({ page }) => {
 });
 
 test('clicking a rar filename shows the icon-only preview with metadata', async ({ page }) => {
-  await uploadFixture(page, 'sample.rar');
+  // octet-stream is what real browsers send for .rar
+  await uploadFixture(page, 'sample.rar', 'application/octet-stream');
 
   await fileRow(page, 'sample.rar').getByText('sample.rar', { exact: true }).click();
 
@@ -106,7 +111,7 @@ test('clicking a rar filename shows the icon-only preview with metadata', async 
 test('uploading a disallowed type keeps the modal open with the server error', async ({ page }) => {
   await uploadFixture(page, 'sample.pdf');
 
-  await expect(page.getByText('Unsupported file type: application/pdf')).toBeVisible();
+  await expect(page.getByText('Unsupported file type: .pdf')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Upload file' })).toBeVisible();
   await expect(page.locator('upload-modal').getByText('sample.pdf')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Change file' })).toBeVisible();
