@@ -1,0 +1,2 @@
+Hello from the e2e fixtures.
+Second line of text.
