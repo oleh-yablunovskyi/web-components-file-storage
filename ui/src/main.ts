@@ -1,4 +1,5 @@
 import { registerPages } from './pages/register-pages.js';
+import { getToken } from './stores/token-store.js';
 
 registerPages();
 
@@ -33,7 +34,7 @@ function findRoute(hash: string) {
 }
 
 function route() {
-  const hasToken = localStorage.getItem('jwt') !== null;
+  const hasToken = getToken() !== null;
   const currentRoute = findRoute(location.hash);
 
   if (!currentRoute) {

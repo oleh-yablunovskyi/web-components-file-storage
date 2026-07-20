@@ -26,11 +26,18 @@ services:
       PORT: ${API_PORT:-3000}
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-filestorage}
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-me}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://garage:3900}
+      S3_REGION: ${S3_REGION:-garage}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
     ports:
       - '3000:3000'
     depends_on:
       db:
         condition: service_healthy
+      garage:
+        condition: service_started
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO /dev/null http://127.0.0.1:3000/api/health || exit 1']
       interval: 2s
@@ -60,5 +67,24 @@ services:
       timeout: 3s
       retries: 5
 
+  garage:
+    image: dxflrs/garage:v2.3.0
+    command: /garage server --single-node --default-access-key --default-bucket
+    environment:
+      GARAGE_DEFAULT_ACCESS_KEY: ${S3_ACCESS_KEY}
+      GARAGE_DEFAULT_SECRET_KEY: ${S3_SECRET_KEY}
+      GARAGE_DEFAULT_BUCKET: ${S3_BUCKET}
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET}
+      GARAGE_ADMIN_TOKEN: ${GARAGE_ADMIN_TOKEN}
+    ports:
+      - '3900:3900'
+      - '3903:3903'
+    volumes:
+      - garage_meta:/var/lib/garage/meta
+      - garage_data:/var/lib/garage/data
+      - ./infra/garage.toml:/etc/garage.toml:ro
+
 volumes:
   db_data:
+  garage_meta:
+  garage_data:
