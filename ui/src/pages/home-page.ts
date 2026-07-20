@@ -1,6 +1,8 @@
 import '../components/file-list.js';
 import '../components/upload-modal.js';
+import '../components/file-preview.js';
 import { getToken, clearToken } from '../stores/token-store.js';
+import type { FileMeta } from '../api/files-api.js';
 
 const template = document.createElement('template');
 template.innerHTML = `
@@ -56,6 +58,7 @@ template.innerHTML = `
   </div>
 
   <upload-modal id="modal"></upload-modal>
+  <file-preview id="preview"></file-preview>
   <file-list id="list"></file-list>
 `;
 
@@ -95,6 +98,13 @@ class HomePage extends HTMLElement {
 
     this.shadow.getElementById('upload')!.addEventListener('click', () => modal.open());
     modal.addEventListener('upload-success', () => list.refresh());
+
+    const preview = this.shadow.getElementById('preview') as HTMLElement & {
+      open(file: FileMeta): void;
+    };
+    list.addEventListener('preview-requested', (e) => {
+      preview.open((e as CustomEvent<FileMeta>).detail);
+    });
   }
 }
 

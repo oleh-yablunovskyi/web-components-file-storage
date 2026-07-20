@@ -1,5 +1,6 @@
 import { downloadFile, deleteFile } from '../api/files-api.js';
 import type { FileMeta } from '../api/files-api.js';
+import { formatSize } from '../utils/format-utils.js';
 
 const ICONS: Record<string, string> = {
   'image/png': '🖼️',
@@ -10,13 +11,6 @@ const ICONS: Record<string, string> = {
 
 function iconFor(mimeType: string): string {
   return ICONS[mimeType] ?? '📄';
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const kb = bytes / 1024;
-  if (kb < 1024) return `${kb.toFixed(1)} KB`;
-  return `${(kb / 1024).toFixed(1)} MB`;
 }
 
 const template = document.createElement('template');
@@ -42,6 +36,11 @@ template.innerHTML = `
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      cursor: pointer;
+    }
+
+    .name:hover {
+      text-decoration: underline;
     }
 
     .meta {
@@ -81,6 +80,7 @@ class FileRow extends HTMLElement {
     this.shadow = this.attachShadow({ mode: 'open' });
     this.shadow.appendChild(template.content.cloneNode(true));
 
+    this.shadow.getElementById('name')!.addEventListener('click', () => this.onPreview());
     this.shadow.getElementById('download')!.addEventListener('click', () => this.onDownload());
     this.shadow.getElementById('delete')!.addEventListener('click', () => this.onDelete());
   }
@@ -91,6 +91,17 @@ class FileRow extends HTMLElement {
     this.shadow.getElementById('name')!.textContent = file.name;
     this.shadow.getElementById('size')!.textContent = formatSize(file.sizeBytes);
     this.shadow.getElementById('date')!.textContent = new Date(file.uploadedAt).toLocaleDateString();
+  }
+
+  private onPreview() {
+    if (!this.meta) return;
+    this.dispatchEvent(
+      new CustomEvent<FileMeta>('preview-requested', {
+        detail: this.meta,
+        bubbles: true,
+        composed: true,
+      }),
+    );
   }
 
   private async onDownload() {
