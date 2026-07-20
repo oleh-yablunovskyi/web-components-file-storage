@@ -86,6 +86,8 @@ export class FilesController {
       let pendingUpload: Promise<Result<FileMeta, FilesStoreError>> | null = null;
 
       bb.on('file', (_field, stream, info) => {
+        // On abort, bb.destroy() errors this stream; an 'error' with no listener crashes the process.
+        stream.on('error', () => {});
         pendingUpload = this.filesStore.upload(userId, info.filename, info.mimeType, stream);
       });
       bb.on('error', reject);
@@ -99,6 +101,15 @@ export class FilesController {
         } catch (err) {
           reject(err);
         }
+      });
+
+      req.on('close', () => {
+        if (req.complete || req.readableEnded) return;
+        // After an abort, no code awaits this promise again. If it later rejects,
+        // the unhandled rejection crashes the process, so discard its failure here.
+        pendingUpload?.catch(() => {});
+        reject(new ApiError(400, 'CLIENT_ABORTED', 'Client aborted upload'));
+        bb.destroy();
       });
 
       req.pipe(bb);
